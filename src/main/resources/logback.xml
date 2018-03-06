@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false" scan="true" scanPeriod="30 minutes">
+    <property name="LOG_HOME" value="logs/"/>
+
+    <!-- 打印到控制台 -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level-%logger{5} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 打印到文件 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!--日志文件输出的文件名-->
+            <fileNamePattern>${LOG_HOME}/minicap.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 限制文件最大保存时间 -->
+            <maxHistory>7</maxHistory>
+            <!-- 当文件大小超过10M时触发滚动 -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>10MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level-%logger{5} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Minicap Server -->
+    <appender name="MINICAP_SERVER" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!--日志文件输出的文件名-->
+            <fileNamePattern>${LOG_HOME}/minicap_server.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 限制文件最大保存时间 -->
+            <maxHistory>7</maxHistory>
+            <!-- 当文件大小超过10M时触发滚动 -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>10MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level-%logger{5} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Minicap Client -->
+    <appender name="MINICAP_CLIENT" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!--日志文件输出的文件名-->
+            <fileNamePattern>${LOG_HOME}/minicap_client.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 限制文件最大保存时间 -->
+            <maxHistory>7</maxHistory>
+            <!-- 当文件大小超过10M时触发滚动 -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>10MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level-%logger{5} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.cuiyang.minicap.MinicapServer" level="INFO" additivity="false">
+        <appender-ref ref="MINICAP_SERVER"/>
+    </logger>
+
+    <logger name="org.cuiyang.minicap.MinicapClient" level="INFO" additivity="false">
+        <appender-ref ref="MINICAP_CLIENT"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
