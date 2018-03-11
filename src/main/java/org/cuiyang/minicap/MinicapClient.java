@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
@@ -16,7 +17,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * @author cuiyang
  */
 @Slf4j
-public class MinicapClient extends Thread {
+public class MinicapClient extends Thread implements Closeable {
 
     /** 主机 */
     private String host = "localhost";
@@ -29,7 +30,7 @@ public class MinicapClient extends Thread {
     /** 存放图片队列 */
     private BlockingQueue<byte[]> frameQueue;
     /** 是否运行 */
-    private RunningState state;
+    private boolean isRunning;
     /** 调用take的线程 */
     private Thread takeThread;
 
@@ -69,28 +70,49 @@ public class MinicapClient extends Thread {
     }
 
     @Override
+    public void close() {
+        this.isRunning = false;
+        IOUtils.closeQuietly(this.socket);
+        this.interrupt();
+    }
+
+    @Override
     public void run() {
-        if (this.state != RunningState.READY) {
-            throw new IllegalStateException("The minicap client no ready");
+        if (this.isRunning) {
+            throw new IllegalStateException("Minicap客户端已运行");
         } else {
-            this.state = RunningState.STARTUP;
+            this.isRunning = true;
         }
-        log.info("The minicap client running...");
-        try {
-            this.socket = new Socket(host, port);
-            this.state = RunningState.RUNNING;
-            InputStream inputStream = socket.getInputStream();
-            handleServerResponse(inputStream);
-        } catch (Exception e) {
-            log.error("The minicap client run error", e);
-        } finally {
-            IOUtils.closeQuietly(this.socket);
+        log.info("Minicap客户端启动中...");
+        while (this.isRunning) {
+            try {
+                this.socket = new Socket(host, port);
+            } catch (IOException e) {
+                log.warn("连接到Minicap服务端失败，稍后重试");
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignore) {
+                }
+                continue;
+            }
+            // 开始运行minicap客户端
+            try {
+                InputStream inputStream = socket.getInputStream();
+                handleServerResponse(inputStream);
+                log.info("与Minicap服务端连接中断");
+            } catch (Exception e) {
+                log.error("Minicap客户端运行错误", e);
+            } finally {
+                IOUtils.closeQuietly(this.socket);
+            }
         }
+
+        // 中断正在获取帧的线程
         if (takeThread != null) {
             takeThread.interrupt();
         }
-        this.state = RunningState.CLOSED;
-        log.info("Minicap client closed");
+        this.isRunning = false;
+        log.info("Minicap客户端已关闭！");
     }
 
     /**
@@ -222,7 +244,7 @@ public class MinicapClient extends Thread {
     protected void offer(byte[] frame) {
         if (frameQueue.size() >= queueSize) {
             frameQueue.poll();
-            log.debug("Frame queue full,will throw away a frame");
+            log.debug("存放帧的队列已满，将会抛弃最旧的一帧");
         }
         frameQueue.offer(frame);
     }
@@ -231,8 +253,8 @@ public class MinicapClient extends Thread {
      * 检查是否关闭
      */
     protected void checkClosed() {
-        if (this.state == RunningState.CLOSED) {
-            throw new IllegalStateException("The minicap client has closed");
+        if (!this.isRunning) {
+            throw new IllegalStateException("Minicap客户端已关闭");
         }
     }
 
@@ -241,6 +263,6 @@ public class MinicapClient extends Thread {
      */
     protected void init() {
         this.frameQueue = new LinkedBlockingQueue<>(queueSize);
-        this.state = RunningState.READY;
     }
+
 }

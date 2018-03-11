@@ -6,10 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.cuiyang.minicap.ddmlib.DdmlibUtils;
 import org.cuiyang.minicap.ddmlib.PhysicalSize;
-import org.cuiyang.minicap.util.ResourceUtils;
 
+import java.io.Closeable;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+
+import static org.cuiyang.minicap.util.ResourceUtils.getResourceAsStream;
 
 /**
  * Minicap server
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeoutException;
  * @author cuiyang
  */
 @Slf4j
-public class MinicapServer extends Thread {
+public class MinicapServer extends Thread implements Closeable {
 
     /** android 临时文件存放目录 */
     private static final String ANDROID_TMP_DIR = "/data/local/tmp/";
@@ -45,12 +46,11 @@ public class MinicapServer extends Thread {
     /** -Q <value>: JPEG quality (0-100) */
     private int quality = 100;
     /** 是否运行 */
-    private RunningState state;
+    private boolean isRunning;
 
     public MinicapServer(IDevice device) {
         super("minicap-server");
         this.device = device;
-        init();
     }
 
     public MinicapServer(IDevice device, int port, float zoom, int rotate, int quality) {
@@ -60,85 +60,6 @@ public class MinicapServer extends Thread {
         this.zoom = zoom;
         this.rotate = rotate;
         this.quality = quality;
-        init();
-    }
-
-    /**
-     * 获取cpu abi
-     * @return cpu abi
-     * @throws Exception 获取失败
-     */
-    public String getAbi() throws Exception {
-        if (abi == null) {
-            abi = DdmlibUtils.getAbi(device);
-        }
-        return abi;
-    }
-
-    /**
-     * 获取sdk api
-     * @return sdk api
-     * @throws Exception 获取失败
-     */
-    public int getApi() throws Exception {
-        if (api == 0) {
-            api = DdmlibUtils.getApi(device);
-        }
-        return api;
-    }
-
-    /**
-     * 获取屏幕支持
-     * @return PhysicalSize
-     * @throws Exception 获取失败
-     */
-    public PhysicalSize getSize() throws Exception {
-        if (size == null) {
-            size = DdmlibUtils.getPhysicalSize(device);
-        }
-        return size;
-    }
-
-    /**
-     * Get display projection (<w>x<h>@<w>x<h>/{0|90|180|270})
-     * @return Display projection
-     */
-    public String getProjection() throws Exception {
-        PhysicalSize size = getSize();
-        return String.format("%sx%s@%sx%s/%s", size.getWidth(), size.getHeight(),
-                Math.round(size.getWidth() * zoom), Math.round(size.getHeight() * zoom), rotate);
-    }
-
-    /**
-     * 获取执行的命令
-     * @return shell命令
-     */
-    public String getCommand() throws Exception {
-        return String.format("LD_LIBRARY_PATH=/data/local/tmp /data/local/tmp/minicap -P %s -Q %s", getProjection(), quality);
-    }
-
-    /**
-     * 获取minicap路径
-     * @return minicap路径
-     */
-    public String getMinicapPath() throws Exception {
-        return String.format("minicap/bin/%s/minicap", getAbi());
-    }
-
-    /**
-     * 获取minicap-nopie路径
-     * @return minicap-nopie路径
-     */
-    public String getMinicapNopiePath() throws Exception {
-        return String.format("minicap/bin/%s/minicap-nopie", getAbi());
-    }
-
-    /**
-     * 获取minicap.so路径
-     * @return minicap.so路径
-     */
-    public String getMinicapSoPath() throws Exception {
-        return String.format("minicap/shared/android-%s/%s/minicap.so", getApi(), getAbi());
     }
 
     /**
@@ -146,57 +67,37 @@ public class MinicapServer extends Thread {
      * @return true 已运行 false 未运行
      */
     public boolean isRunning() {
-        return this.state == RunningState.RUNNING;
+        return this.isRunning;
     }
 
-    /**
-     * 等待运行
-     * @param timeout 超时时间
-     * @throws InterruptedException 中断
-     * @throws TimeoutException 超时
-     */
-    public void waitRunning(long timeout) throws InterruptedException, TimeoutException {
-        long total = 0;
-        while (!isRunning()) {
-            total += 200;
-            Thread.sleep(200);
-            if (this.state == RunningState.READY) {
-                // 还未运行
-                throw new IllegalStateException("The minicap server not start");
-            } else if (this.state == RunningState.CLOSED) {
-                // 运行失败已关闭
-                throw new IllegalStateException("The minicap server has closed");
-            }
-            if (total > timeout) {
-                this.state = RunningState.CLOSED;
-                throw new TimeoutException("The minicap server timeout");
-            }
-        }
+    @Override
+    public void close() {
+        this.isRunning = false;
     }
 
     @Override
     public void run() {
-        if (this.state != RunningState.READY) {
-            throw new IllegalStateException("The minicap server no ready");
+        if (this.isRunning) {
+            throw new IllegalStateException("Minicap服务已运行");
         } else {
-            this.state = RunningState.STARTUP;
+            this.isRunning = true;
         }
         log.info("The minicap server running...");
         try {
             // push minicap
             String minicapPath = getMinicapPath();
             log.info("Push file local: {}, remote: {}", minicapPath, MINICAP_TMP_DIR);
-            DdmlibUtils.pushFile(device, ResourceUtils.getResource(minicapPath), MINICAP_TMP_DIR, "777");
+            DdmlibUtils.pushFile(device, getResourceAsStream(minicapPath), MINICAP_TMP_DIR, "777");
 
             // push minicap-nopie
             String minicapNopiePath = getMinicapNopiePath();
             log.info("Push file local: {}, remote: {}", minicapNopiePath, MINICAP_NOPIE_TMP_DIR);
-            DdmlibUtils.pushFile(device, ResourceUtils.getResource(minicapNopiePath), MINICAP_NOPIE_TMP_DIR, "777");
+            DdmlibUtils.pushFile(device, getResourceAsStream(minicapNopiePath), MINICAP_NOPIE_TMP_DIR, "777");
 
             // push minicap.so
             String minicapSoPath = getMinicapSoPath();
             log.info("Push file local: {}, remote: {}", minicapSoPath, MINICAP_SO_TMP_DIR);
-            DdmlibUtils.pushFile(device, ResourceUtils.getResource(minicapSoPath), MINICAP_SO_TMP_DIR, "777");
+            DdmlibUtils.pushFile(device, getResourceAsStream(minicapSoPath), MINICAP_SO_TMP_DIR, "777");
 
             // forward port
             device.createForward(port, "minicap", IDevice.DeviceUnixSocketNamespace.ABSTRACT);
@@ -208,9 +109,6 @@ public class MinicapServer extends Thread {
             device.executeShellCommand(command, new IShellOutputReceiver() {
                 @Override
                 public void addOutput(byte[] bytes, int i, int i1) {
-                    if (state == RunningState.STARTUP) {
-                        state = RunningState.RUNNING;
-                    }
                     String ret = new String(bytes, i, i1);
                     String[] split = ret.split("\n");
                     for (String line : split) {
@@ -226,7 +124,7 @@ public class MinicapServer extends Thread {
 
                 @Override
                 public boolean isCancelled() {
-                    return state == RunningState.CLOSED;
+                    return !MinicapServer.this.isRunning;
                 }
             }, Integer.MAX_VALUE, TimeUnit.DAYS);
         } catch (Exception e) {
@@ -238,14 +136,85 @@ public class MinicapServer extends Thread {
                 log.error("Remove forward fail. port: {}", e, port);
             }
         }
-        this.state = RunningState.CLOSED;
+        this.isRunning = false;
         log.info("Minicap server closed");
     }
 
     /**
-     * 初始化
+     * 获取cpu abi
+     * @return cpu abi
+     * @throws Exception 获取失败
      */
-    protected void init() {
-        this.state = RunningState.READY;
+    protected String getAbi() throws Exception {
+        if (abi == null) {
+            abi = DdmlibUtils.getAbi(device);
+        }
+        return abi;
+    }
+
+    /**
+     * 获取sdk api
+     * @return sdk api
+     * @throws Exception 获取失败
+     */
+    protected int getApi() throws Exception {
+        if (api == 0) {
+            api = DdmlibUtils.getApi(device);
+        }
+        return api;
+    }
+
+    /**
+     * 获取屏幕支持
+     * @return PhysicalSize
+     * @throws Exception 获取失败
+     */
+    protected PhysicalSize getSize() throws Exception {
+        if (size == null) {
+            size = DdmlibUtils.getPhysicalSize(device);
+        }
+        return size;
+    }
+
+    /**
+     * Get display projection (<w>x<h>@<w>x<h>/{0|90|180|270})
+     * @return Display projection
+     */
+    protected String getProjection() throws Exception {
+        PhysicalSize size = getSize();
+        return String.format("%sx%s@%sx%s/%s", size.getWidth(), size.getHeight(),
+                Math.round(size.getWidth() * zoom), Math.round(size.getHeight() * zoom), rotate);
+    }
+
+    /**
+     * 获取执行的命令
+     * @return shell命令
+     */
+    protected String getCommand() throws Exception {
+        return String.format("LD_LIBRARY_PATH=/data/local/tmp /data/local/tmp/minicap -P %s -Q %s", getProjection(), quality);
+    }
+
+    /**
+     * 获取minicap路径
+     * @return minicap路径
+     */
+    protected String getMinicapPath() throws Exception {
+        return String.format("minicap/bin/%s/minicap", getAbi());
+    }
+
+    /**
+     * 获取minicap-nopie路径
+     * @return minicap-nopie路径
+     */
+    protected String getMinicapNopiePath() throws Exception {
+        return String.format("minicap/bin/%s/minicap-nopie", getAbi());
+    }
+
+    /**
+     * 获取minicap.so路径
+     * @return minicap.so路径
+     */
+    protected String getMinicapSoPath() throws Exception {
+        return String.format("minicap/shared/android-%s/%s/minicap.so", getApi(), getAbi());
     }
 }

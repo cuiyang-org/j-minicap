@@ -1,6 +1,7 @@
 package org.cuiyang.minicap.util;
 
 import java.io.InputStream;
+import java.net.URL;
 
 /**
  * ResourceUtils
@@ -9,7 +10,11 @@ import java.io.InputStream;
  */
 public class ResourceUtils {
 
-    public static InputStream getResource(String name) {
+    public static InputStream getResourceAsStream(String name) {
         return ResourceUtils.class.getClassLoader().getResourceAsStream(name);
+    }
+
+    public static URL getResource(String name) {
+        return ResourceUtils.class.getClassLoader().getResource(name);
     }
 }
