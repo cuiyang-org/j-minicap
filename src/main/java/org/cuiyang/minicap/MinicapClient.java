@@ -77,12 +77,17 @@ public class MinicapClient extends Thread implements Closeable {
     }
 
     @Override
-    public void run() {
+    public synchronized void start() {
         if (this.isRunning) {
             throw new IllegalStateException("Minicap客户端已运行");
         } else {
             this.isRunning = true;
         }
+        super.start();
+    }
+
+    @Override
+    public void run() {
         log.info("Minicap客户端启动中...");
         while (this.isRunning) {
             try {
