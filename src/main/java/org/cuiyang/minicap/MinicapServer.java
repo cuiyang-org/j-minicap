@@ -76,36 +76,44 @@ public class MinicapServer extends Thread implements Closeable {
     }
 
     @Override
-    public void run() {
+    public synchronized void start() {
         if (this.isRunning) {
             throw new IllegalStateException("Minicap服务已运行");
         } else {
             this.isRunning = true;
         }
-        log.info("The minicap server running...");
         try {
             // push minicap
             String minicapPath = getMinicapPath();
-            log.info("Push file local: {}, remote: {}", minicapPath, MINICAP_TMP_DIR);
+            log.info("推送文件 local: {}, remote: {}", minicapPath, MINICAP_TMP_DIR);
             DdmlibUtils.pushFile(device, getResourceAsStream(minicapPath), MINICAP_TMP_DIR, "777");
 
             // push minicap-nopie
             String minicapNopiePath = getMinicapNopiePath();
-            log.info("Push file local: {}, remote: {}", minicapNopiePath, MINICAP_NOPIE_TMP_DIR);
+            log.info("推送文件 local: {}, remote: {}", minicapNopiePath, MINICAP_NOPIE_TMP_DIR);
             DdmlibUtils.pushFile(device, getResourceAsStream(minicapNopiePath), MINICAP_NOPIE_TMP_DIR, "777");
 
             // push minicap.so
             String minicapSoPath = getMinicapSoPath();
-            log.info("Push file local: {}, remote: {}", minicapSoPath, MINICAP_SO_TMP_DIR);
+            log.info("推送文件 local: {}, remote: {}", minicapSoPath, MINICAP_SO_TMP_DIR);
             DdmlibUtils.pushFile(device, getResourceAsStream(minicapSoPath), MINICAP_SO_TMP_DIR, "777");
 
             // forward port
             device.createForward(port, "minicap", IDevice.DeviceUnixSocketNamespace.ABSTRACT);
-            log.info("Forward tcp:{} localabstract:minicap", port);
+            log.info("端口转发 tcp:{} localabstract:minicap", port);
+        } catch (Exception e) {
+            throw new IllegalStateException("Minicap服务启动失败");
+        }
+        super.start();
+    }
 
+    @Override
+    public void run() {
+        try {
+            log.info("Minicap服务已启动");
             // run minicap server
             String command = getCommand();
-            log.info("Execute shell command: {}", command);
+            log.info("执行命令 command: {}", command);
             device.executeShellCommand(command, new IShellOutputReceiver() {
                 @Override
                 public void addOutput(byte[] bytes, int i, int i1) {
@@ -128,16 +136,16 @@ public class MinicapServer extends Thread implements Closeable {
                 }
             }, Integer.MAX_VALUE, TimeUnit.DAYS);
         } catch (Exception e) {
-            log.error("Minicap server exception", e);
+            log.error("Minicap服务运行异常", e);
         } finally {
             try {
                 device.removeForward(port, "minicap", IDevice.DeviceUnixSocketNamespace.ABSTRACT);
             } catch (Exception e) {
-                log.error("Remove forward fail. port: {}", e, port);
+                log.error("移除端口转发失败. port: {}", e, port);
             }
         }
         this.isRunning = false;
-        log.info("Minicap server closed");
+        log.info("Minicap服务已关闭");
     }
 
     /**
