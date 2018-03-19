@@ -9,6 +9,7 @@ import org.cuiyang.minicap.ddmlib.PhysicalSize;
 
 import java.io.Closeable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.cuiyang.minicap.util.ResourceUtils.getResourceAsStream;
 
@@ -46,20 +47,19 @@ public class MinicapServer extends Thread implements Closeable {
     /** -Q <value>: JPEG quality (0-100) */
     private int quality = 100;
     /** 是否运行 */
-    private boolean isRunning;
+    private AtomicBoolean isRunning = new AtomicBoolean(false);
+    /** 是否重启 */
+    private AtomicBoolean restart = new AtomicBoolean(false);
 
     public MinicapServer(IDevice device) {
         super("minicap-server");
         this.device = device;
     }
 
-    public MinicapServer(IDevice device, int port, float zoom, int rotate, int quality) {
+    public MinicapServer(IDevice device, int port) {
         super("minicap-server");
         this.device = device;
         this.port = port;
-        this.zoom = zoom;
-        this.rotate = rotate;
-        this.quality = quality;
     }
 
     /**
@@ -67,20 +67,52 @@ public class MinicapServer extends Thread implements Closeable {
      * @return true 已运行 false 未运行
      */
     public boolean isRunning() {
-        return this.isRunning;
+        return this.isRunning.get();
     }
 
     @Override
     public void close() {
-        this.isRunning = false;
+        this.isRunning.set(false);
+        this.restart.set(true);
+    }
+
+    /**
+     * 设置缩放比例，默认为1不缩放
+     * @param zoom 缩放比例
+     */
+    public void setZoom(float zoom) {
+        this.zoom = zoom;
+    }
+
+    /**
+     * 设置旋转角度，默认为0不旋转
+     * @param rotate 旋转角度
+     */
+    public void setRotate(int rotate) {
+        this.rotate = rotate;
+    }
+
+    /**
+     * 设置图片质量，默认为100最高质量
+     * @param quality 图片质量
+     */
+    public void setQuality(int quality) {
+        this.quality = quality;
+    }
+
+    /**
+     * 重启
+     */
+    public synchronized void restart() {
+        this.restart.set(true);
     }
 
     @Override
     public synchronized void start() {
-        if (this.isRunning) {
+        if (this.isRunning.get()) {
             throw new IllegalStateException("Minicap服务已运行");
         } else {
-            this.isRunning = true;
+            this.isRunning.set(true);
         }
         try {
             // push minicap
@@ -109,42 +141,45 @@ public class MinicapServer extends Thread implements Closeable {
 
     @Override
     public void run() {
-        try {
-            log.info("Minicap服务已启动");
-            // run minicap server
-            String command = getCommand();
-            log.info("执行命令 command: {}", command);
-            device.executeShellCommand(command, new IShellOutputReceiver() {
-                @Override
-                public void addOutput(byte[] bytes, int i, int i1) {
-                    String ret = new String(bytes, i, i1);
-                    String[] split = ret.split("\n");
-                    for (String line : split) {
-                        if (StringUtils.isNotEmpty(line)) {
-                            log.info(line.trim());
+        log.info("Minicap服务已启动");
+        while (this.isRunning.get()) {
+            try {
+                // run minicap server
+                String command = getCommand();
+                log.info("拉起Minicap服务 command: {}", command);
+                device.executeShellCommand(command, new IShellOutputReceiver() {
+                    @Override
+                    public void addOutput(byte[] bytes, int i, int i1) {
+                        String ret = new String(bytes, i, i1);
+                        String[] split = ret.split("\n");
+                        for (String line : split) {
+                            if (StringUtils.isNotEmpty(line)) {
+                                log.info(line.trim());
+                            }
                         }
                     }
-                }
 
-                @Override
-                public void flush() {
-                }
+                    @Override
+                    public void flush() {
+                    }
 
-                @Override
-                public boolean isCancelled() {
-                    return !MinicapServer.this.isRunning;
-                }
-            }, Integer.MAX_VALUE, TimeUnit.DAYS);
-        } catch (Exception e) {
-            log.error("Minicap服务运行异常", e);
-        } finally {
-            try {
-                device.removeForward(port, "minicap", IDevice.DeviceUnixSocketNamespace.ABSTRACT);
+                    @Override
+                    public boolean isCancelled() {
+                        boolean result = restart.get();
+                        restart.set(false);
+                        return result;
+                    }
+                }, Integer.MAX_VALUE, TimeUnit.DAYS);
             } catch (Exception e) {
-                log.error("移除端口转发失败. port: {}", e, port);
+                log.error("Minicap服务运行异常", e);
             }
         }
-        this.isRunning = false;
+        try {
+            device.removeForward(port, "minicap", IDevice.DeviceUnixSocketNamespace.ABSTRACT);
+        } catch (Exception e) {
+            log.error("移除端口转发失败. port: {}", e, port);
+        }
+        this.isRunning.set(false);
         log.info("Minicap服务已关闭");
     }
 

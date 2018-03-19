@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.net.Socket;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Minicap client
@@ -30,7 +31,7 @@ public class MinicapClient extends Thread implements Closeable {
     /** 存放图片队列 */
     private BlockingQueue<byte[]> frameQueue;
     /** 是否运行 */
-    private boolean isRunning;
+    private AtomicBoolean isRunning = new AtomicBoolean(false);
     /** 调用take的线程 */
     private Thread takeThread;
 
@@ -71,17 +72,17 @@ public class MinicapClient extends Thread implements Closeable {
 
     @Override
     public void close() {
-        this.isRunning = false;
+        this.isRunning.set(false);
         IOUtils.closeQuietly(this.socket);
         this.interrupt();
     }
 
     @Override
     public synchronized void start() {
-        if (this.isRunning) {
+        if (this.isRunning.get()) {
             throw new IllegalStateException("Minicap客户端已运行");
         } else {
-            this.isRunning = true;
+            this.isRunning.set(true);
         }
         super.start();
     }
@@ -89,7 +90,7 @@ public class MinicapClient extends Thread implements Closeable {
     @Override
     public void run() {
         log.info("Minicap客户端启动中...");
-        while (this.isRunning) {
+        while (this.isRunning.get()) {
             try {
                 this.socket = new Socket(host, port);
             } catch (IOException e) {
@@ -102,6 +103,7 @@ public class MinicapClient extends Thread implements Closeable {
             }
             // 开始运行minicap客户端
             try {
+                reset();
                 InputStream inputStream = socket.getInputStream();
                 handleServerResponse(inputStream);
                 log.info("与Minicap服务端连接中断");
@@ -116,7 +118,7 @@ public class MinicapClient extends Thread implements Closeable {
         if (takeThread != null) {
             takeThread.interrupt();
         }
-        this.isRunning = false;
+        this.isRunning.set(false);
         log.info("Minicap客户端已关闭！");
     }
 
@@ -258,7 +260,7 @@ public class MinicapClient extends Thread implements Closeable {
      * 检查是否关闭
      */
     protected void checkClosed() {
-        if (!this.isRunning) {
+        if (!this.isRunning.get()) {
             throw new IllegalStateException("Minicap客户端已关闭");
         }
     }
@@ -268,6 +270,18 @@ public class MinicapClient extends Thread implements Closeable {
      */
     protected void init() {
         this.frameQueue = new LinkedBlockingQueue<>(queueSize);
+
+    }
+
+    /**
+     * 重置
+     */
+    protected void reset() {
+        this.banner = null;
+        this.readBannerBytes = 0;
+        this.bannerLength = 2;
+        this.readFrameBytes = 0;
+        this.frameBodyLength = 0;
     }
 
 }
